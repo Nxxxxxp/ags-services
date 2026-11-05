@@ -154,6 +154,18 @@ export default class Memory extends GObject.Object {
       this.#start()
    }
 
+   #timerId: number | null = null
+   #updateInterval: number = 1
+
+   #total: number = -1
+   #available: number = -1
+   #used: number = -1
+   #usedPercent: number = -1
+   #swapTotal: number = -1
+   #swapFree: number = -1
+   #swapUsed: number = -1
+   #swapUsedPercent: number = -1
+
    #start(): void {
       if (this.#timerId) {
          GLib.Source.remove(this.#timerId)
@@ -166,18 +178,6 @@ export default class Memory extends GObject.Object {
          return GLib.SOURCE_CONTINUE
       })
    }
-
-   #timerId: number | null = null
-   #updateInterval: number = 1
-
-   #total: number = -1
-   #available: number = -1
-   #used: number = -1
-   #usedPercent: number = -1
-   #swapTotal: number = -1
-   #swapFree: number = -1
-   #swapUsed: number = -1
-   #swapUsedPercent: number = -1
 
    async #update(): Promise<void> {
       try {
