@@ -12,15 +12,20 @@ import { getter, register } from "gnim/gobject"
 import { readFile, readFileAsync } from "ags/file"
 
 interface LogicalCpuData {
-   name: string // e.g. (cpu0)
+   name: string // e.g. cpu0
    usage: number // percent (0-100)
    freq: number // mhz
    temp: number // celsius
 }
 
-interface LogicalCpuTopology {
+type LogicalCpuTopology = {
    coreId: number
    dieId: number
+}
+
+type CpuTicks = {
+   total: number
+   idle: number
 }
 
 const CPUINFO_FILE = Gio.File.new_for_path("/proc/cpuinfo")
@@ -29,7 +34,6 @@ const STAT_FILE = Gio.File.new_for_path("/proc/stat")
 const HwmonDriver = {
    CORETEMP: "coretemp",
    K10TEMP: "k10temp",
-   ZENPOWER: "zenpower",
 } as const
 
 /**
@@ -42,11 +46,10 @@ export default class Cpu extends GObject.Object {
 
    /**
     * Get the singleton of the class.
-    * @returns {Memory} Singleton instance.
+    * @returns {Cpu} Singleton instance.
     */
    static get default(): Cpu {
       if (!this.#instance) this.#instance = new Cpu()
-
       return this.#instance
    }
 
@@ -55,23 +58,23 @@ export default class Cpu extends GObject.Object {
     * @returns {string} CPU vendor name.
     */
    @getter(String) get vendor() {
-      return this.#vendor ?? "N/A"
+      return this.#vendor ?? "Unknown"
    }
 
    /**
-    * Hwmon driver name (coretemp, k10temp, zenpower).
+    * Hwmon driver name (coretemp, k10temp).
     * @returns {string} CPU hwmon driver name.
     */
    @getter(String) get driver() {
-      return this.#driver ?? "N/A"
+      return this.#driver ?? "Unknown"
    }
 
    /**
-    * Commercial CPU model name (e.g. 12th Gen Intel Core i5-12600KF).
+    * Commercial CPU model name.
     * @returns {string} CPU model name.
     */
    @getter(String) get modelName() {
-      return this.#modelName ?? "N/A"
+      return this.#modelName ?? "Unknown"
    }
 
    /**
@@ -84,7 +87,7 @@ export default class Cpu extends GObject.Object {
 
    /**
     * CPU package temperature representing the resulting temperature
-    * from core dies, SMD components, thermal interface, and substrate (in degrees Celsius).
+    * from core dies, SMD components, thermal interface, and substrate (degrees Celsius).
     * @returns {number} CPU package temperature in degrees Celsius.
     */
    @getter(Number) get packageTemp() {
@@ -92,7 +95,7 @@ export default class Cpu extends GObject.Object {
    }
 
    /**
-    * Number of physical CPU cores.
+    * The number of physical CPU cores.
     * @returns {number} CPU cores number.
     */
    @getter(Number) get coresNum() {
@@ -100,7 +103,7 @@ export default class Cpu extends GObject.Object {
    }
 
    /**
-    * Number of logical CPU cores.
+    * The number of logical CPU cores.
     * @returns {number} CPU logical cores number.
     */
    @getter(Number) get processorsNum() {
@@ -108,7 +111,7 @@ export default class Cpu extends GObject.Object {
    }
 
    /**
-    * CPU individual logical cores metrics (name, usage, frequency, temperature).
+    * The individual logical cores metrics of CPU (name, usage, frequency, temperature).
     * @returns {Array} CPU logical cores data.
     */
    @getter(Array) get cores() {
@@ -116,7 +119,7 @@ export default class Cpu extends GObject.Object {
    }
 
    /**
-    * Interval of metrics update (seconds).
+    * The update interval or metrics (seconds).
     * @returns {number} Interval in seconds
     */
    @getter(Number) get updateInterval() {
@@ -124,7 +127,7 @@ export default class Cpu extends GObject.Object {
    }
 
    /**
-    * Sets new metrics update interval (seconds).
+    * Sets the new update interval of metrics (seconds).
     * @param {number} value New interval in seconds.
     * @returns {void}
     */
@@ -157,7 +160,7 @@ export default class Cpu extends GObject.Object {
    #timerId: number | null = null
    #hwmon: string | null = null
    #topology = new Map<string, LogicalCpuTopology>()
-   #history = new Map<string, { total: number; idle: number }>()
+   #history = new Map<string, CpuTicks>()
    #freqFiles = new Map<string, Gio.File>()
    #tempFiles = new Map<string, Gio.File>()
    #packageTempFile: Gio.File | null = null
@@ -230,7 +233,7 @@ export default class Cpu extends GObject.Object {
             const content = readFile(`/sys/class/hwmon/hwmon${i}/name`)
             const name = content.trim()
 
-            if (name === HwmonDriver.CORETEMP || name === HwmonDriver.K10TEMP || name === HwmonDriver.ZENPOWER) {
+            if (name === HwmonDriver.CORETEMP || name === HwmonDriver.K10TEMP) {
                this.#hwmon = `/sys/class/hwmon/hwmon${i}`
                this.#driver = name
 
@@ -247,18 +250,20 @@ export default class Cpu extends GObject.Object {
    #cacheTopology(): void {
       if (!this.#hwmon || !this.#processorsNum) return
 
-      try {
-         for (let i = 0; i < this.#processorsNum; i++) {
+      for (let i = 0; i < this.#processorsNum; i++) {
+         try {
             const name = `cpu${i}`
 
             const coreId = +readFile(`/sys/devices/system/cpu/${name}/topology/core_id`)
             const dieId = +readFile(`/sys/devices/system/cpu/${name}/topology/die_id`)
 
             this.#topology.set(name, { coreId: coreId, dieId: dieId })
+         } catch (err) {
+            logErr("Failed to cache CPU topology.", err)
+            this.#topology.clear()
+
+            break
          }
-      } catch (err) {
-         logErr("Failed to cache CPU topology.", err)
-         this.#topology.clear()
       }
    }
 
@@ -295,11 +300,6 @@ export default class Cpu extends GObject.Object {
                   }
 
                   break
-               case HwmonDriver.ZENPOWER:
-                  // TODO:
-                  break
-               default:
-                  break
             }
 
             if (sensorPath) {
@@ -309,29 +309,32 @@ export default class Cpu extends GObject.Object {
       }
    }
 
-   async #readCoreFreq(name: string): Promise<number | null> {
-      try {
-         const file = this.#freqFiles.get(name)
-         if (!file) return null
-
-         const content = await readFileAsync(file)
-
-         return Math.round(+content.trim() / 1000)
-      } catch (err) {
-         logErr(`Failed to read ${name} frequency.`, err)
-         return null
-      }
-   }
-
    async #readPackageTemp(): Promise<number | null> {
       if (!this.#packageTempFile) return null
 
       try {
          const content = await readFileAsync(this.#packageTempFile)
+         const temp = +content.trim().slice(0, -3)
 
-         return +content.trim().slice(0, -3)
+         return temp
       } catch (err) {
          logErr("Failed to read CPU package temperature.", err)
+         return null
+      }
+   }
+
+   async #readCoreFreq(name: string): Promise<number | null> {
+      const file = this.#freqFiles.get(name)
+      if (!file) return null
+
+      try {
+         const content = await readFileAsync(file)
+         const khz = +content.trim()
+         const mhz = Math.round(khz / 1000)
+
+         return mhz
+      } catch (err) {
+         logErr(`Failed to read ${name} frequency.`, err)
          return null
       }
    }
@@ -339,27 +342,18 @@ export default class Cpu extends GObject.Object {
    async #readCoreTemp(name: string): Promise<number | null> {
       if (!this.#hwmon || !this.#driver) return null
 
+      const file = this.#tempFiles.get(name)
+      if (!file) return null
+
       try {
-         const file = this.#tempFiles.get(name)
-         if (!file) return null
-
          const content = await readFileAsync(file)
+         const temp = +content.trim().slice(0, -3)
 
-         return +content.trim().slice(0, -3)
+         return temp
       } catch (err) {
          logErr(`Failed to read ${name} temperature`, err)
          return null
       }
-   }
-
-   async #readZenpowerCoreTemp(name: string): Promise<number | null> {
-      // TODO:
-      return null
-   }
-
-   async #readPackagePower(): Promise<number | null> {
-      // TODO:
-      return null
    }
 
    async #update(): Promise<void> {
