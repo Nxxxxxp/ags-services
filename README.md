@@ -1,5 +1,5 @@
 # ags-services
-### GObject based classes for the convenient CPU, GPU, memory and disk metrics bindings for your Aylur's GTK Shell widgets.
+### GObject based classes for the convenient CPU, memory and disk metrics bindings for your Aylur's GTK Shell widgets.
 #### These services are meant to spare you from the routine task of reading sysfs files or creating background subprocesses.
 ***
 ### Usage examples:
