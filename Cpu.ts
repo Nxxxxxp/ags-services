@@ -1,6 +1,6 @@
 /**
  * @author Vladislav Stepanov
- * @copyright Copyright (C) 2026
+ * @copyright 2026
  * @link https://github.com/Nxxxxxp
  * @license MIT
  */
@@ -132,7 +132,7 @@ export default class Cpu extends GObject.Object {
     * @returns {void}
     */
    set updateInterval(value: number) {
-      if (value >= 0 && this.#updateInterval !== value) {
+      if (value > 0 && this.#updateInterval !== value) {
          this.#updateInterval = value
          this.notify("update-interval")
 
@@ -228,7 +228,9 @@ export default class Cpu extends GObject.Object {
    }
 
    #cacheHwmonPath(): void {
-      for (let i = 0; i <= 9; i++) {
+      let found = false
+
+      for (let i = 0; i <= 20; i++) {
          try {
             const content = readFile(`/sys/class/hwmon/hwmon${i}/name`)
             const name = content.trim()
@@ -237,13 +239,18 @@ export default class Cpu extends GObject.Object {
                this.#hwmon = `/sys/class/hwmon/hwmon${i}`
                this.#driver = name
 
-               return
+               found = true
+               break
             }
-         } catch (err) {
-            logErr("Failed to cache CPU hwmon path.", err)
-            this.#hwmon = null
-            this.#driver = null
+         } catch {
+            // Suppress error logging on each hwmon file
          }
+      }
+
+      if (!found) {
+         logErr("Failed to cache CPU hwmon path. No such a file.", null /* err */)
+         this.#hwmon = null
+         this.#driver = null
       }
    }
 
@@ -409,14 +416,14 @@ export default class Cpu extends GObject.Object {
    }
 }
 
-function logErr(context: string, err: unknown): void {
-   logError(err as any, `CPU Service [ERROR]: ${context}`)
-}
-
 const calculateUsage = (deltaIdle: number, deltaTotal: number): number => {
    if (deltaTotal > 0) {
       return Math.round((1 - deltaIdle / deltaTotal) * 100)
    }
 
    return -1
+}
+
+function logErr(context: string, err: unknown): void {
+   logError(err as any, `CPU Service [ERROR]: ${context}`)
 }

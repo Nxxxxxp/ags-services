@@ -1,6 +1,6 @@
 /**
  * @author Vladislav Stepanov
- * @copyright Copyright (C) 2026
+ * @copyright 2026
  * @link https://github.com/Nxxxxxp
  * @license MIT
  */
@@ -23,11 +23,10 @@ export default class Memory extends GObject.Object {
 
    /**
     * Get the singleton of the class.
-    * @returns {Memory} Singleton.
+    * @returns {Memory} Singleton instance.
     */
    static get default(): Memory {
       if (!this.#instance) this.#instance = new Memory()
-
       return this.#instance
    }
 
@@ -139,7 +138,7 @@ export default class Memory extends GObject.Object {
     * @returns {void}
     */
    set updateInterval(value: number) {
-      if (value >= 0 && this.#updateInterval !== value) {
+      if (value > 0 && this.#updateInterval !== value) {
          this.#updateInterval = value
          this.notify("update-interval")
 
@@ -267,7 +266,7 @@ export default class Memory extends GObject.Object {
             this.notify("swap-used-percent")
          }
       } catch (err) {
-         logError(err as any, "Memory Service [ERROR]: Failed to read /proc/meminfo. ")
+         logErr("Failed to read /proc/meminfo.", err)
       }
    }
 }
@@ -279,4 +278,8 @@ export default class Memory extends GObject.Object {
  */
 function parseBytesInt(line: string): number {
    return +line.replace(/\D/g, "") * 1024
+}
+
+function logErr(context: string, err: unknown): void {
+   logError(err as any, `Memory Service [ERROR]: ${context}`)
 }
