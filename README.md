@@ -4,25 +4,26 @@
 ***
 ### Usage examples:
 #### CPU:
-```
+```tsx
 import { createBinding } from "gnim"
 import Cpu from ./Cpu
 
 const cpu = Cpu.default
 
+const modelName = createBinding(cpu, "modelName")
 const usage = createBinding(cpu, "usage")
 const packageTemp = createBinding(cpu, "packageTemp")
 
 const widget = () => (
   <box spacing={10}>
-    <label label="Your CPU model name" />
+    <label label={modelName} />
     <label label={usage(value => `${value}%`)} />
     <label label={packageTemp(value => `${value}°C`)} />
   </box>
 )
 ```
 #### Memory:
-```
+```tsx
 import { createBinding } from "gnim"
 import Memory from ./Memory
 
@@ -35,6 +36,23 @@ const widget = () => (
   <box spacing={10}>
     <label label={usedPercent(value => `${value}%`)} />
     <label label={total(value => `${Memory.toGB(value)} GB`)} />
+  </box>
+)
+```
+#### Disk:
+```tsx
+import { createBinding } from "gnim"
+import Disk from ./Disk
+
+const disk = Disk.default
+
+const usedPercent = createBinding(disk, "usedPercent")
+const size = createBinding(disk, "size")
+
+const widget = () => (
+  <box spacing={10}>
+    <label label={usedPercent(value => `${value}%`)} />
+    <label label={size(value => `${Disk.toGB(value)} GB`)} />
   </box>
 )
 ```
